@@ -13,12 +13,49 @@ BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
+GRAY = (128, 128, 128)
 SPEED = 10
 
 # Set up the display
 screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-pygame.display.set_caption('Snake Game')
+pygame.display.set_caption('Snake Game with Walls')
 clock = pygame.time.Clock()
+
+class Wall:
+    def __init__(self):
+        self.positions = set()
+        self.generate_walls()
+
+    def generate_walls(self):
+        # Border walls
+        for i in range(GRID_COUNT):
+            self.positions.add((0, i))  # Left wall
+            self.positions.add((GRID_COUNT - 1, i))  # Right wall
+            self.positions.add((i, 0))  # Top wall
+            self.positions.add((i, GRID_COUNT - 1))  # Bottom wall
+        
+        # Add some random internal walls
+        num_internal_walls = 5
+        for _ in range(num_internal_walls):
+            wall_length = random.randint(3, 6)
+            start_x = random.randint(5, GRID_COUNT - 6)
+            start_y = random.randint(5, GRID_COUNT - 6)
+            
+            # Randomly choose horizontal or vertical wall
+            if random.choice([True, False]):
+                # Horizontal wall
+                for x in range(start_x, min(start_x + wall_length, GRID_COUNT - 1)):
+                    self.positions.add((x, start_y))
+            else:
+                # Vertical wall
+                for y in range(start_y, min(start_y + wall_length, GRID_COUNT - 1)):
+                    self.positions.add((start_x, y))
+
+    def render(self, surface):
+        for position in self.positions:
+            rect = (position[0] * GRID_SIZE, position[1] * GRID_SIZE,
+                   GRID_SIZE - 1, GRID_SIZE - 1)
+            pygame.draw.rect(surface, GRAY, rect)
 
 class Snake:
     def __init__(self):
@@ -29,13 +66,13 @@ class Snake:
     def get_head_position(self):
         return self.positions[0]
 
-    def update(self):
+    def update(self, walls):
         current = self.get_head_position()
         x, y = self.direction
-        new = ((current[0] + x) % GRID_COUNT, (current[1] + y) % GRID_COUNT)
+        new = (current[0] + x, current[1] + y)
         
-        # Check for collision with self
-        if new in self.positions[1:]:
+        # Check for collision with walls or self
+        if new in walls.positions or new in self.positions[1:]:
             return False
 
         self.positions.insert(0, new)
@@ -59,11 +96,20 @@ class Snake:
 class Food:
     def __init__(self):
         self.position = (0, 0)
-        self.randomize_position()
+        self.walls = None
 
-    def randomize_position(self):
-        self.position = (random.randint(0, GRID_COUNT - 1),
-                        random.randint(0, GRID_COUNT - 1))
+    def randomize_position(self, snake, walls):
+        self.walls = walls
+        available_positions = []
+        
+        for x in range(GRID_COUNT):
+            for y in range(GRID_COUNT):
+                pos = (x, y)
+                if pos not in walls.positions and pos not in snake.positions:
+                    available_positions.append(pos)
+        
+        if available_positions:
+            self.position = random.choice(available_positions)
 
     def render(self, surface):
         rect = (self.position[0] * GRID_SIZE, self.position[1] * GRID_SIZE,
@@ -72,8 +118,11 @@ class Food:
 
 def main():
     snake = Snake()
+    walls = Wall()
     food = Food()
+    food.randomize_position(snake, walls)
     score = 0
+    high_score = 0
     font = pygame.font.Font(None, 36)
 
     while True:
@@ -90,28 +139,39 @@ def main():
                     snake.direction = (-1, 0)
                 elif event.key == pygame.K_RIGHT and snake.direction != (-1, 0):
                     snake.direction = (1, 0)
+                elif event.key == pygame.K_r:  # Reset game with new wall layout
+                    snake.reset()
+                    walls = Wall()
+                    food.randomize_position(snake, walls)
+                    score = 0
 
         # Update snake position
-        if not snake.update():
+        if not snake.update(walls):
             # Game over
+            if score > high_score:
+                high_score = score
             snake.reset()
-            food.randomize_position()
+            walls = Wall()
+            food.randomize_position(snake, walls)
             score = 0
 
         # Check for food collision
         if snake.get_head_position() == food.position:
             snake.grow = True
-            food.randomize_position()
+            food.randomize_position(snake, walls)
             score += 1
 
         # Draw everything
         screen.fill(BLACK)
+        walls.render(screen)
         snake.render(screen)
         food.render(screen)
         
-        # Draw score
+        # Draw scores
         score_text = font.render(f'Score: {score}', True, WHITE)
+        high_score_text = font.render(f'High Score: {high_score}', True, WHITE)
         screen.blit(score_text, (10, 10))
+        screen.blit(high_score_text, (10, 50))
 
         pygame.display.update()
         clock.tick(SPEED)
