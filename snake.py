@@ -6,9 +6,9 @@ import sys
 pygame.init()
 
 # Constants
-WINDOW_SIZE = 600
-GRID_SIZE = 20
-GRID_COUNT = WINDOW_SIZE // GRID_SIZE
+GRID_SIZE = 20  # Size of each grid cell
+INITIAL_WINDOW_SIZE = (600, 600)  # Initial window size
+MIN_WINDOW_SIZE = (400, 400)  # Minimum window size
 BLACK = (0, 0, 0)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
@@ -16,57 +16,83 @@ GREEN = (0, 255, 0)
 GRAY = (128, 128, 128)
 SPEED = 10
 
-# Set up the display
-screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-pygame.display.set_caption('Snake Game')
+# Set up the display with resizable flag
+screen = pygame.display.set_mode(INITIAL_WINDOW_SIZE, pygame.RESIZABLE)
+pygame.display.set_caption('Snake Game - Resizable')
 clock = pygame.time.Clock()
 
-class Wall:
+class GameState:
     def __init__(self):
-        self.positions = set()
-        self.generate_walls()
+        self.window_size = INITIAL_WINDOW_SIZE
+        self.grid_count_x = self.window_size[0] // GRID_SIZE
+        self.grid_count_y = self.window_size[1] // GRID_SIZE
+        
+    def update_size(self, new_size):
+        self.window_size = (max(new_size[0], MIN_WINDOW_SIZE[0]), 
+                           max(new_size[1], MIN_WINDOW_SIZE[1]))
+        self.grid_count_x = self.window_size[0] // GRID_SIZE
+        self.grid_count_y = self.window_size[1] // GRID_SIZE
+        return pygame.display.set_mode(self.window_size, pygame.RESIZABLE)
 
-    def generate_walls(self):
+class Wall:
+    def __init__(self, game_state):
+        self.positions = set()
+        self.generate_walls(game_state)
+
+    def generate_walls(self, game_state):
+        self.positions.clear()
         # Add some random internal walls
-        num_internal_walls = 5
+        num_internal_walls = (game_state.grid_count_x + game_state.grid_count_y) // 8
+        
         for _ in range(num_internal_walls):
             wall_length = random.randint(3, 6)
-            start_x = random.randint(5, GRID_COUNT - 6)
-            start_y = random.randint(5, GRID_COUNT - 6)
+            start_x = random.randint(5, game_state.grid_count_x - 6)
+            start_y = random.randint(5, game_state.grid_count_y - 6)
             
-            # Randomly choose horizontal or vertical wall
             if random.choice([True, False]):
                 # Horizontal wall
-                for x in range(start_x, min(start_x + wall_length, GRID_COUNT - 1)):
+                for x in range(start_x, min(start_x + wall_length, game_state.grid_count_x - 1)):
                     self.positions.add((x, start_y))
             else:
                 # Vertical wall
-                for y in range(start_y, min(start_y + wall_length, GRID_COUNT - 1)):
+                for y in range(start_y, min(start_y + wall_length, game_state.grid_count_y - 1)):
                     self.positions.add((start_x, y))
 
-    def render(self, surface):
+    def render(self, surface, game_state):
+        # Draw border walls
+        pygame.draw.rect(surface, GRAY, (0, 0, game_state.window_size[0], GRID_SIZE))  # Top
+        pygame.draw.rect(surface, GRAY, (0, game_state.window_size[1] - GRID_SIZE, 
+                        game_state.window_size[0], GRID_SIZE))  # Bottom
+        pygame.draw.rect(surface, GRAY, (0, 0, GRID_SIZE, game_state.window_size[1]))  # Left
+        pygame.draw.rect(surface, GRAY, (game_state.window_size[0] - GRID_SIZE, 0, 
+                        GRID_SIZE, game_state.window_size[1]))  # Right
+        
+        # Draw internal walls
         for position in self.positions:
             rect = (position[0] * GRID_SIZE, position[1] * GRID_SIZE,
                    GRID_SIZE - 1, GRID_SIZE - 1)
             pygame.draw.rect(surface, GRAY, rect)
 
 class Snake:
-    def __init__(self):
-        self.positions = [(GRID_COUNT // 2, GRID_COUNT // 2)]
-        self.direction = (1, 0)  # Start moving right
+    def __init__(self, game_state):
+        self.reset(game_state)
+
+    def reset(self, game_state):
+        self.positions = [(game_state.grid_count_x // 2, game_state.grid_count_y // 2)]
+        self.direction = (1, 0)
         self.grow = False
 
     def get_head_position(self):
         return self.positions[0]
 
-    def update(self, walls):
+    def update(self, walls, game_state):
         current = self.get_head_position()
         x, y = self.direction
         new = (current[0] + x, current[1] + y)
         
-        # Check for collision with walls, window edges, or self
-        if (new[0] < 0 or new[0] >= GRID_COUNT or 
-            new[1] < 0 or new[1] >= GRID_COUNT or 
+        # Check for collisions with walls, window edges, or self
+        if (new[0] < 0 or new[0] >= game_state.grid_count_x or 
+            new[1] < 0 or new[1] >= game_state.grid_count_y or 
             new in walls.positions or 
             new in self.positions[1:]):
             return False
@@ -78,11 +104,6 @@ class Snake:
             self.grow = False
         return True
 
-    def reset(self):
-        self.positions = [(GRID_COUNT // 2, GRID_COUNT // 2)]
-        self.direction = (1, 0)
-        self.grow = False
-
     def render(self, surface):
         for position in self.positions:
             rect = (position[0] * GRID_SIZE, position[1] * GRID_SIZE,
@@ -92,14 +113,12 @@ class Snake:
 class Food:
     def __init__(self):
         self.position = (0, 0)
-        self.walls = None
 
-    def randomize_position(self, snake, walls):
-        self.walls = walls
+    def randomize_position(self, snake, walls, game_state):
         available_positions = []
         
-        for x in range(1, GRID_COUNT - 1):  # Avoid edges
-            for y in range(1, GRID_COUNT - 1):  # Avoid edges
+        for x in range(1, game_state.grid_count_x - 1):
+            for y in range(1, game_state.grid_count_y - 1):
                 pos = (x, y)
                 if pos not in walls.positions and pos not in snake.positions:
                     available_positions.append(pos)
@@ -108,15 +127,16 @@ class Food:
             self.position = random.choice(available_positions)
 
     def render(self, surface):
-        rect = (self.position[0] * GRID_SIZE, self.position[1] * GRID_SIZE,
+        rect = (self.position[0] * GRID_SIZE, position[1] * GRID_SIZE,
                GRID_SIZE - 1, GRID_SIZE - 1)
         pygame.draw.rect(surface, RED, rect)
 
 def main():
-    snake = Snake()
-    walls = Wall()
+    game_state = GameState()
+    snake = Snake(game_state)
+    walls = Wall(game_state)
     food = Food()
-    food.randomize_position(snake, walls)
+    food.randomize_position(snake, walls, game_state)
     score = 0
     high_score = 0
     font = pygame.font.Font(None, 36)
@@ -126,6 +146,11 @@ def main():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
+            elif event.type == pygame.VIDEORESIZE:
+                screen = game_state.update_size(event.size)
+                # Regenerate walls and reposition food for new size
+                walls.generate_walls(game_state)
+                food.randomize_position(snake, walls, game_state)
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_UP and snake.direction != (0, 1):
                     snake.direction = (0, -1)
@@ -135,38 +160,31 @@ def main():
                     snake.direction = (-1, 0)
                 elif event.key == pygame.K_RIGHT and snake.direction != (-1, 0):
                     snake.direction = (1, 0)
-                elif event.key == pygame.K_r:  # Reset game with new wall layout
-                    snake.reset()
-                    walls = Wall()
-                    food.randomize_position(snake, walls)
+                elif event.key == pygame.K_r:  # Reset game
+                    snake.reset(game_state)
+                    walls.generate_walls(game_state)
+                    food.randomize_position(snake, walls, game_state)
                     score = 0
 
         # Update snake position
-        if not snake.update(walls):
+        if not snake.update(walls, game_state):
             # Game over
             if score > high_score:
                 high_score = score
-            snake.reset()
-            walls = Wall()
-            food.randomize_position(snake, walls)
+            snake.reset(game_state)
+            walls.generate_walls(game_state)
+            food.randomize_position(snake, walls, game_state)
             score = 0
 
         # Check for food collision
         if snake.get_head_position() == food.position:
             snake.grow = True
-            food.randomize_position(snake, walls)
+            food.randomize_position(snake, walls, game_state)
             score += 1
 
         # Draw everything
         screen.fill(BLACK)
-        
-        # Draw window border
-        pygame.draw.rect(screen, GRAY, (0, 0, WINDOW_SIZE, GRID_SIZE))  # Top
-        pygame.draw.rect(screen, GRAY, (0, WINDOW_SIZE - GRID_SIZE, WINDOW_SIZE, GRID_SIZE))  # Bottom
-        pygame.draw.rect(screen, GRAY, (0, 0, GRID_SIZE, WINDOW_SIZE))  # Left
-        pygame.draw.rect(screen, GRAY, (WINDOW_SIZE - GRID_SIZE, 0, GRID_SIZE, WINDOW_SIZE))  # Right
-        
-        walls.render(screen)
+        walls.render(screen, game_state)
         snake.render(screen)
         food.render(screen)
         
