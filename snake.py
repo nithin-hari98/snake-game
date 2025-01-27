@@ -18,7 +18,7 @@ SPEED = 10
 
 # Set up the display
 screen = pygame.display.set_mode((WINDOW_SIZE, WINDOW_SIZE))
-pygame.display.set_caption('Snake Game with Walls')
+pygame.display.set_caption('Snake Game')
 clock = pygame.time.Clock()
 
 class Wall:
@@ -27,13 +27,6 @@ class Wall:
         self.generate_walls()
 
     def generate_walls(self):
-        # Border walls
-        for i in range(GRID_COUNT):
-            self.positions.add((0, i))  # Left wall
-            self.positions.add((GRID_COUNT - 1, i))  # Right wall
-            self.positions.add((i, 0))  # Top wall
-            self.positions.add((i, GRID_COUNT - 1))  # Bottom wall
-        
         # Add some random internal walls
         num_internal_walls = 5
         for _ in range(num_internal_walls):
@@ -71,8 +64,11 @@ class Snake:
         x, y = self.direction
         new = (current[0] + x, current[1] + y)
         
-        # Check for collision with walls or self
-        if new in walls.positions or new in self.positions[1:]:
+        # Check for collision with walls, window edges, or self
+        if (new[0] < 0 or new[0] >= GRID_COUNT or 
+            new[1] < 0 or new[1] >= GRID_COUNT or 
+            new in walls.positions or 
+            new in self.positions[1:]):
             return False
 
         self.positions.insert(0, new)
@@ -102,8 +98,8 @@ class Food:
         self.walls = walls
         available_positions = []
         
-        for x in range(GRID_COUNT):
-            for y in range(GRID_COUNT):
+        for x in range(1, GRID_COUNT - 1):  # Avoid edges
+            for y in range(1, GRID_COUNT - 1):  # Avoid edges
                 pos = (x, y)
                 if pos not in walls.positions and pos not in snake.positions:
                     available_positions.append(pos)
@@ -163,6 +159,13 @@ def main():
 
         # Draw everything
         screen.fill(BLACK)
+        
+        # Draw window border
+        pygame.draw.rect(screen, GRAY, (0, 0, WINDOW_SIZE, GRID_SIZE))  # Top
+        pygame.draw.rect(screen, GRAY, (0, WINDOW_SIZE - GRID_SIZE, WINDOW_SIZE, GRID_SIZE))  # Bottom
+        pygame.draw.rect(screen, GRAY, (0, 0, GRID_SIZE, WINDOW_SIZE))  # Left
+        pygame.draw.rect(screen, GRAY, (WINDOW_SIZE - GRID_SIZE, 0, GRID_SIZE, WINDOW_SIZE))  # Right
+        
         walls.render(screen)
         snake.render(screen)
         food.render(screen)
